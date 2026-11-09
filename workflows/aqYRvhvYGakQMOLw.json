@@ -1,0 +1,193 @@
+{
+  "id": "aqYRvhvYGakQMOLw",
+  "name": "공모주 매일 8시 카톡 알림 (국내, 무료)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "Every Day 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "t2",
+      "name": "Manual Test Webhook",
+      "webhookId": "994925fa-6979-4057-b64b-e1e172dbeca8",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kakao-ipo-test",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D1OfBqvHy2GK3rdG",
+          "name": "Kakao Webhook Header Auth"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Fetch 38.co.kr IPO Schedule",
+      "notes": "Why HTTP: free public page (no API key); no native node. Uses http:// because the site's HTTPS uses a weak DH key that Node rejects (EPROTO).",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        280,
+        100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://www.38.co.kr/html/fund/index.htm?o=k",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Parse and Format IPO List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Why Code: no native node decodes EUC-KR HTML and formats rows into <=200-char chunks (Kakao text limit).\nconst buf = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst html = new TextDecoder('euc-kr').decode(buf);\n\nconst kst = new Date(Date.now() + 9 * 3600 * 1000);\nconst todayStr = kst.toISOString().slice(0, 10);\nconst today = new Date(todayStr + 'T00:00:00Z');\nconst weekEnd = new Date(today.getTime() + 6 * 86400000);\nconst strip = (s) => s.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\\s+/g, ' ').trim();\n\nconst tbody = (html.split('<tbody>')[1] || '').split('</tbody>')[0];\nconst pad = (n) => String(n).padStart(2, '0');\nconst rows = [];\nfor (const tr of tbody.split(/<tr[\\s>]/).slice(1)) {\n  const tds = [...tr.matchAll(/<td[^>]*>([\\s\\S]*?)<\\/td>/g)].map((m) => strip(m[1]));\n  if (tds.length < 4) continue;\n  const m = tds[1].match(/(\\d{4})\\.(\\d{2})\\.(\\d{2})\\s*~\\s*(?:(\\d{2})\\.)?(\\d{2})/);\n  if (!m) continue;\n  const y = +m[1];\n  const sm = +m[2];\n  const sd = +m[3];\n  const em = m[4] ? +m[4] : sm;\n  const ed = +m[5];\n  const ey = em < sm ? y + 1 : y;\n  const start = new Date(Date.UTC(y, sm - 1, sd));\n  const end = new Date(Date.UTC(ey, em - 1, ed));\n  const price = tds[2] && tds[2] !== '-' ? '확정 ' + tds[2] : '희망 ' + tds[3];\n  rows.push({ name: tds[0], start, end, label: `${pad(sm)}.${pad(sd)}~${pad(em)}.${pad(ed)}`, price });\n}\n\nconst upcoming = rows.filter((r) => r.end >= today).sort((a, b) => a.start - b.start);\nconst thisWeek = upcoming.filter((r) => r.start <= weekEnd);\nconst picked = upcoming.slice(0, 10);\nconst md = todayStr.slice(5).replace('-', '.');\n\nif (!picked.length) {\n  return [{ json: { text: `[공모주 ${md}] 진행/예정 공모주가 없습니다.` } }];\n}\nconst lines = picked.map((r, i) => `${i + 1}. ${r.name} ${r.label} ${r.price}`);\nconst head = thisWeek.length\n  ? `[공모주 ${md}] 이번 주 청약 ${thisWeek.length}건`\n  : `[공모주 ${md}] 이번 주 청약 없음, 다가오는 일정`;\n\nconst chunks = [];\nlet cur = [];\nfor (const l of lines) {\n  if ((cur.join('\\n') + '\\n' + l).length > 140) { chunks.push(cur); cur = []; }\n  cur.push(l);\n}\nif (cur.length) chunks.push(cur);\nreturn chunks.map((c, i) => ({\n  json: { text: `${i === 0 ? head : `[공모주 ${md}]`} (${i + 1}/${chunks.length})\\n${c.join('\\n')}`.slice(0, 200) },\n}));\n"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Send Kakao Memo",
+      "notes": "Why HTTP: no native Kakao node; Kakao memo API.",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://kapi.kakao.com/v2/api/talk/memo/default/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "template_object",
+              "value": "={{ JSON.stringify({ object_type: 'text', text: $json.text, link: { web_url: 'https://www.38.co.kr/html/fund/index.htm?o=k', mobile_web_url: 'https://www.38.co.kr/html/fund/index.htm?o=k' } }) }}"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "credentials": {
+        "oAuth2Api": {
+          "id": "RDOH5jEruPg3ysyP",
+          "name": "Unnamed credential"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Day 8AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch 38.co.kr IPO Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch 38.co.kr IPO Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch 38.co.kr IPO Schedule": {
+      "main": [
+        [
+          {
+            "node": "Parse and Format IPO List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and Format IPO List": {
+      "main": [
+        [
+          {
+            "node": "Send Kakao Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "executionOrder": "v1",
+    "errorWorkflow": "y3AnOKWG26QNkIjS"
+  },
+  "tags": [],
+  "pinData": null
+}
