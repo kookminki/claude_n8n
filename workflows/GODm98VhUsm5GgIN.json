@@ -1,0 +1,397 @@
+{
+  "id": "GODm98VhUsm5GgIN",
+  "name": "n8n 워크플로우 GitHub 백업 (매일 16시)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "b1",
+      "name": "Daily 4PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 16 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b2",
+      "name": "Manual Test Webhook",
+      "webhookId": "6c4fe180-b37c-47f2-8e7f-a99fd2b2fba7",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-backup-test",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D1OfBqvHy2GK3rdG",
+          "name": "Kakao Webhook Header Auth"
+        }
+      }
+    },
+    {
+      "id": "b3",
+      "name": "Config",
+      "notes": "GitHub owner / repo / branch 설정 (여기만 바꾸면 됨)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        272,
+        112
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "owner",
+              "type": "string",
+              "value": "kookminki"
+            },
+            {
+              "id": "c2",
+              "name": "repo",
+              "type": "string",
+              "value": "claude_n8n"
+            },
+            {
+              "id": "c3",
+              "name": "branch",
+              "type": "string",
+              "value": "main"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b5",
+      "name": "Prepare File",
+      "notes": "Named step: builds repo path + base64 file content.",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        784,
+        112
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "path",
+              "type": "string",
+              "value": "={{ 'workflows/' + $json.id + '.json' }}"
+            },
+            {
+              "id": "p2",
+              "name": "wfName",
+              "type": "string",
+              "value": "={{ $json.name }}"
+            },
+            {
+              "id": "p3",
+              "name": "content",
+              "type": "string",
+              "value": "={{ JSON.stringify({ id: $json.id, name: $json.name, active: $json.active, nodes: $json.nodes, connections: $json.connections, settings: $json.settings, tags: $json.tags, pinData: $json.pinData }, null, 2).base64Encode() }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b6",
+      "name": "Get Existing File (GitHub)",
+      "notes": "Why HTTP: GitHub REST API (user asked for API method). neverError so a 404 = new file.",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        112
+      ],
+      "parameters": {
+        "url": "={{ 'https://api.github.com/repos/' + $('Config').first().json.owner + '/' + $('Config').first().json.repo + '/contents/' + $json.path + '?ref=' + $('Config').first().json.branch }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": false,
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-backup"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "githubApi": {
+          "id": "R0agoUeRC5DXoooa",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "id": "b7",
+      "name": "Changed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1312,
+        112
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "i1",
+              "leftValue": "={{ String($json.content || '').replace(/\\n/g, '') }}",
+              "rightValue": "={{ $('Prepare File').item.json.content }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b8",
+      "name": "Commit File (GitHub)",
+      "notes": "Why HTTP: GitHub REST API contents PUT. sha is set only when the file already exists.",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 3000,
+      "position": [
+        1568,
+        0
+      ],
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://api.github.com/repos/' + $('Config').first().json.owner + '/' + $('Config').first().json.repo + '/contents/' + $('Prepare File').item.json.path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendQuery": false,
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "X-GitHub-Api-Version",
+              "value": "2022-11-28"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-backup"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: 'backup: ' + $('Prepare File').item.json.wfName + ' (' + $now.toFormat('yyyy-LL-dd HH:mm') + ')', content: $('Prepare File').item.json.content, branch: $('Config').first().json.branch, sha: $json.sha }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "githubApi": {
+          "id": "R0agoUeRC5DXoooa",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "id": "b9",
+      "name": "List Workflows (n8n API)",
+      "notes": "Why HTTP: n8n node's Base URL was invalid; direct call to the local n8n Public API. limit=250 is the API max (single page).",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        528,
+        112
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:5678/api/v1/workflows?limit=250",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "n8nApi",
+        "options": {}
+      },
+      "credentials": {
+        "n8nApi": {
+          "id": "cqhrHfO8fCKrSaiV",
+          "name": "n8n account"
+        }
+      }
+    },
+    {
+      "id": "b10",
+      "name": "Split Workflows",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        660,
+        112
+      ],
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Daily 4PM": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare File": {
+      "main": [
+        [
+          {
+            "node": "Get Existing File (GitHub)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing File (GitHub)": {
+      "main": [
+        [
+          {
+            "node": "Changed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Changed?": {
+      "main": [
+        [
+          {
+            "node": "Commit File (GitHub)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "List Workflows (n8n API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Workflows (n8n API)": {
+      "main": [
+        [
+          {
+            "node": "Split Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Workflows": {
+      "main": [
+        [
+          {
+            "node": "Prepare File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "errorWorkflow": "y3AnOKWG26QNkIjS",
+    "timezone": "Asia/Seoul",
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [],
+  "pinData": {}
+}
