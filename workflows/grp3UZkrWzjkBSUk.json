@@ -1,0 +1,169 @@
+{
+  "id": "grp3UZkrWzjkBSUk",
+  "name": "[TEMP] 카카오 할 일 조회/삭제",
+  "active": false,
+  "nodes": [
+    {
+      "id": "l1",
+      "name": "List Webhook",
+      "webhookId": "d09e4ef0-bd3b-40a7-9947-3efbc90941b5",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kakao-task-list",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D1OfBqvHy2GK3rdG",
+          "name": "Kakao Webhook Header Auth"
+        }
+      }
+    },
+    {
+      "id": "l2",
+      "name": "List Kakao Tasks",
+      "notes": "Why HTTP: no native Kakao node.",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://kapi.kakao.com/v1/api/calendar/tasks",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "from",
+              "value": "={{ $json.body.from }}"
+            },
+            {
+              "name": "to",
+              "value": "={{ $json.body.to }}"
+            },
+            {
+              "name": "task_status",
+              "value": "ALL"
+            },
+            {
+              "name": "limit",
+              "value": "1000"
+            },
+            {
+              "name": "time_zone",
+              "value": "Asia/Seoul"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "oAuth2Api": {
+          "id": "RDOH5jEruPg3ysyP",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "id": "d1",
+      "name": "Delete Webhook",
+      "webhookId": "6c387658-c38c-4ee4-8814-f3ce74f8000b",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        240
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kakao-task-delete",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D1OfBqvHy2GK3rdG",
+          "name": "Kakao Webhook Header Auth"
+        }
+      }
+    },
+    {
+      "id": "d2",
+      "name": "Delete Kakao Task",
+      "notes": "Why HTTP: no native Kakao node.",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        240
+      ],
+      "parameters": {
+        "method": "DELETE",
+        "url": "https://kapi.kakao.com/v1/api/calendar/delete/task",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "task_id",
+              "value": "={{ $json.body.task_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "oAuth2Api": {
+          "id": "RDOH5jEruPg3ysyP",
+          "name": "Unnamed credential"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "List Webhook": {
+      "main": [
+        [
+          {
+            "node": "List Kakao Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Webhook": {
+      "main": [
+        [
+          {
+            "node": "Delete Kakao Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": null
+}
