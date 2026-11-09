@@ -1,0 +1,283 @@
+{
+  "id": "eO2jB9mZMhZh4mH9",
+  "name": "한식 레시피 블로그 자동 발송",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "n1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hansik-recipe-test",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "n0",
+      "name": "Test Webhook",
+      "webhookId": "hansik-recipe-test",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://text.pollinations.ai/openai",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'openai', seed: Math.floor(Math.random()*100000), messages: [ { role: 'system', content: '당신은 한식 트렌드 전문가입니다. 최근 가장 인기 있는 한식 중 1가지를 선정하고, 음식 이름만 한국어로 출력하세요. 설명, 따옴표, 마침표 없이 이름만 답하세요. 예: 김치볶음밥' }, { role: 'user', content: '오늘 날짜는 ' + $now.format('yyyy-MM-dd') + ' 입니다. 요즘 인기 있는 한식 1가지를 골라주세요. 매번 다른 요리가 나오도록 다양하게 선택하세요.' } ] }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "n2",
+      "name": "인기 한식 선정",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        224,
+        0
+      ],
+      "notes": "Why HTTP: 키 없이 쓸 수 있는 무료 LLM(Pollinations) 호출, 전용 노드 없음"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "dish",
+              "type": "string",
+              "value": "={{ ($json.choices[0].message.content || '').replace(/[\"'`.\\n]/g,'').trim() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n3",
+      "name": "선정 요리 정리",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://ko.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent($json.dish) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-recipe-bot/1.0 (stormmk423@gmail.com)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "n4",
+      "name": "이미지 검색 (Wikipedia)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        0
+      ],
+      "notes": "Why HTTP: Wikipedia 전용 노드 없음 (키 불필요)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://text.pollinations.ai/openai",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'openai', messages: [ { role: 'system', content: '당신은 한식 요리 전문가입니다. 독자에게 친절하게 \"~하세요\" 어조로 간결하게 설명합니다. 출력은 이메일 본문용 HTML 조각만 작성하세요(html/body 태그, 코드블록, 마크다운 금지). 구성: <h1>타이틀(요리 이름)</h1>, <p><b>음식 설명:</b> 한 줄 소개</p>, <h2>재료</h2><ul>, <h2>요리 순서</h2><ol>(각 단계 1~2문장), <h2>요리 팁</h2><p>, 마무리 인사 <p>.' }, { role: 'user', content: '요리: ' + $('선정 요리 정리').item.json.dish + '\\n재료와 요리 순서를 요약하고 블로그 글을 작성해 주세요.' } ] }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "n5",
+      "name": "블로그 글 작성",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        880,
+        0
+      ],
+      "notes": "Why HTTP: 키 없이 쓸 수 있는 무료 LLM(Pollinations) 호출"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('이미지 검색 (Wikipedia)').item.json.originalimage?.source || $('이미지 검색 (Wikipedia)').item.json.thumbnail?.source }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-recipe-bot/1.0 (stormmk423@gmail.com)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "n6",
+      "name": "이미지 다운로드",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Why HTTP: 이미지 파일 다운로드"
+    },
+    {
+      "parameters": {
+        "fromEmail": "stormmk423@gmail.com",
+        "toEmail": "stormmk423@gmail.com, iloveme1499@naver.com",
+        "subject": "={{ '[오늘의 한식] ' + $('선정 요리 정리').item.json.dish + ' 만드는 방법' }}",
+        "html": "={{ '<div style=\"font-family:sans-serif;max-width:640px;margin:auto;line-height:1.7\">' + ($('이미지 검색 (Wikipedia)').item.json.originalimage?.source ? '<img src=\"' + $('이미지 검색 (Wikipedia)').item.json.originalimage.source + '\" style=\"width:100%;border-radius:8px\" alt=\"' + $('선정 요리 정리').item.json.dish + '\">' : '') + $('블로그 글 작성').item.json.choices[0].message.content.replace(/```html|```/g,'') + '</div>' }}",
+        "options": {
+          "appendAttribution": false,
+          "attachments": "data"
+        }
+      },
+      "id": "n7",
+      "name": "이메일 발송 (SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1328,
+        0
+      ],
+      "webhookId": "08192d53-4898-47d0-9873-7a8db17d9910",
+      "credentials": {
+        "smtp": {
+          "id": "ovTl2KHb0ATZYfit",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "인기 한식 선정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "인기 한식 선정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "인기 한식 선정": {
+      "main": [
+        [
+          {
+            "node": "선정 요리 정리",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "선정 요리 정리": {
+      "main": [
+        [
+          {
+            "node": "이미지 검색 (Wikipedia)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "이미지 검색 (Wikipedia)": {
+      "main": [
+        [
+          {
+            "node": "블로그 글 작성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "블로그 글 작성": {
+      "main": [
+        [
+          {
+            "node": "이미지 다운로드",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "이미지 다운로드": {
+      "main": [
+        [
+          {
+            "node": "이메일 발송 (SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [],
+  "pinData": {}
+}
