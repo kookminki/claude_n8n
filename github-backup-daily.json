@@ -15,7 +15,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [0, 208],
-      "parameters": { "httpMethod": "POST", "path": "github-backup-test", "authentication": "headerAuth", "responseMode": "lastNode", "options": {} },
+      "parameters": { "httpMethod": "POST", "path": "github-backup-test", "authentication": "headerAuth", "responseMode": "onReceived", "options": {} },
       "credentials": { "httpHeaderAuth": { "id": "D1OfBqvHy2GK3rdG", "name": "Kakao Webhook Header Auth" } }
     },
     {
@@ -37,13 +37,31 @@
       }
     },
     {
-      "id": "b4",
-      "name": "Get All Workflows",
-      "type": "n8n-nodes-base.n8n",
-      "typeVersion": 1,
+      "id": "b9",
+      "name": "List Workflows (n8n API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [528, 112],
-      "parameters": { "resource": "workflow", "operation": "getAll", "returnAll": true, "filters": {}, "requestOptions": {} },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Why HTTP: n8n node's Base URL was invalid; direct call to the local n8n Public API. limit=250 is the API max (single page).",
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:5678/api/v1/workflows?limit=250",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "n8nApi",
+        "options": {}
+      },
       "credentials": { "n8nApi": { "id": "cqhrHfO8fCKrSaiV", "name": "n8n account" } }
+    },
+    {
+      "id": "b10",
+      "name": "Split Workflows",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [660, 112],
+      "parameters": { "fieldToSplitOut": "data", "options": {} }
     },
     {
       "id": "b5",
@@ -114,6 +132,9 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1568, 0],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 3000,
       "notes": "Why HTTP: GitHub REST API contents PUT. sha is set only when the file already exists.",
       "parameters": {
         "method": "PUT",
@@ -131,7 +152,7 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ message: 'backup: ' + $('Prepare File').item.json.wfName + ' (' + $now.toFormat('yyyy-LL-dd HH:mm') + ')', content: $('Prepare File').item.json.content, branch: $('Config').first().json.branch, sha: $json.sha }) }}",
-        "options": {}
+        "options": { "batching": { "batch": { "batchSize": 1, "batchInterval": 1500 } } }
       },
       "credentials": { "githubApi": { "id": "R0agoUeRC5DXoooa", "name": "GitHub account" } }
     }
@@ -139,8 +160,9 @@
   "connections": {
     "Daily 4PM": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
     "Manual Test Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
-    "Config": { "main": [[{ "node": "Get All Workflows", "type": "main", "index": 0 }]] },
-    "Get All Workflows": { "main": [[{ "node": "Prepare File", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "List Workflows (n8n API)", "type": "main", "index": 0 }]] },
+    "List Workflows (n8n API)": { "main": [[{ "node": "Split Workflows", "type": "main", "index": 0 }]] },
+    "Split Workflows": { "main": [[{ "node": "Prepare File", "type": "main", "index": 0 }]] },
     "Prepare File": { "main": [[{ "node": "Get Existing File (GitHub)", "type": "main", "index": 0 }]] },
     "Get Existing File (GitHub)": { "main": [[{ "node": "Changed?", "type": "main", "index": 0 }]] },
     "Changed?": { "main": [[{ "node": "Commit File (GitHub)", "type": "main", "index": 0 }], []] }
