@@ -1,0 +1,103 @@
+{
+  "id": "JLWiLHSRjEAG5t7y",
+  "name": "Webhook to Slack #alert",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Webhook",
+      "webhookId": "slack-alert-0001",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slack-alert",
+        "options": {}
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Create #alert Channel",
+      "webhookId": "d5b80884-8735-4e7a-a348-7a446d29d4cb",
+      "notes": "채널이 이미 있으면(name_taken) 오류를 무시하고 계속 진행",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "onError": "continueRegularOutput",
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "resource": "channel",
+        "channelId": "alert"
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "P9cQo4bbheX55bBd",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Send JSON to Slack",
+      "webhookId": "9a7e0493-388a-4483-bec2-27b95e9e7baa",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "alert"
+        },
+        "text": "=🚨 Webhook 알림\n```{{ JSON.stringify($('Webhook').item.json.body, null, 2) }}```",
+        "otherOptions": {}
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "P9cQo4bbheX55bBd",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create #alert Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create #alert Channel": {
+      "main": [
+        [
+          {
+            "node": "Send JSON to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [],
+  "pinData": {}
+}
