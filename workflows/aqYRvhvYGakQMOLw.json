@@ -1,7 +1,7 @@
 {
   "id": "aqYRvhvYGakQMOLw",
   "name": "공모주 매일 8시 카톡 알림 (국내, 무료)",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "id": "t1",

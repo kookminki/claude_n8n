@@ -1,7 +1,7 @@
 {
   "id": "GODm98VhUsm5GgIN",
   "name": "n8n 워크플로우 GitHub 백업 (매일 16시)",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "id": "b1",
@@ -37,7 +37,7 @@
         "httpMethod": "POST",
         "path": "github-backup-test",
         "authentication": "headerAuth",
-        "responseMode": "lastNode",
+        "responseMode": "onReceived",
         "options": {}
       },
       "credentials": {

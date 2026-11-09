@@ -1,7 +1,7 @@
 {
   "id": "2zBFGiYJA9CCxOmr",
   "name": "Kakao Talk - 나에게 알림 (Webhook)",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "id": "n1",

@@ -1,7 +1,7 @@
 {
   "id": "y3AnOKWG26QNkIjS",
   "name": "에러 발생 시 카톡+이메일 알림 (공용)",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "id": "e1",

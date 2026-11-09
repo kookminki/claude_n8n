@@ -1,7 +1,7 @@
 {
   "id": "cR1sxCVFXq5KHvkd",
   "name": "카카오톡 할 일 등록 (Webhook)",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "id": "w1",
