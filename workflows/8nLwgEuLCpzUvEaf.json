@@ -1,0 +1,298 @@
+{
+  "id": "8nLwgEuLCpzUvEaf",
+  "name": "초등학생 공공 행사 월간 카톡 보고 (전국)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "k1",
+      "name": "Monthly 1st 8AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 1 * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "k2",
+      "name": "Manual Test Webhook",
+      "webhookId": "bfc9747e-2093-42a0-b553-b65cb4fd1fc1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kakao-kids-test",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D1OfBqvHy2GK3rdG",
+          "name": "Kakao Webhook Header Auth"
+        }
+      }
+    },
+    {
+      "id": "k3",
+      "name": "Fetch Festivals (TourAPI)",
+      "notes": "Why HTTP: Korea Tourism Org. TourAPI (free key); no native node.",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        280,
+        100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://apis.data.go.kr/B551011/KorService2/searchFestival2",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "MobileOS",
+              "value": "ETC"
+            },
+            {
+              "name": "MobileApp",
+              "value": "n8n"
+            },
+            {
+              "name": "_type",
+              "value": "json"
+            },
+            {
+              "name": "numOfRows",
+              "value": "1000"
+            },
+            {
+              "name": "pageNo",
+              "value": "1"
+            },
+            {
+              "name": "arrange",
+              "value": "A"
+            },
+            {
+              "name": "eventStartDate",
+              "value": "={{ $now.startOf('month').toFormat('yyyyLLdd') }}"
+            },
+            {
+              "name": "eventEndDate",
+              "value": "={{ $now.endOf('month').toFormat('yyyyLLdd') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "EMoBM66Rfx8Fin9W",
+          "name": "TourAPI serviceKey"
+        }
+      }
+    },
+    {
+      "id": "k4",
+      "name": "Filter Kids Events and Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Why Code: merges two sources (JSON + XML), keyword/venue scoring and 200-char Kakao chunking; no native node combines these.\nconst todayStr = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, '');\nconst month = todayStr.slice(4, 6);\nconst fmt = (d) => `${d.slice(4, 6)}.${d.slice(6, 8)}`;\nconst unesc = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/&amp;/g, '&').replace(/\\s+/g, ' ').trim();\n\n// 1) TourAPI festivals\nconst tourBody = $('Fetch Festivals (TourAPI)').first().json?.response?.body || {};\nconst tourRaw = tourBody.items && tourBody.items.item ? tourBody.items.item : [];\nconst tourKw = /어린이|초등|가족|아이|키즈|청소년|학생|체험|과학|동화|교육|캠프|놀이|공룡|곤충|동물|로봇|우주|인형|마술|박물관|도서관|독서/;\nconst tour = (Array.isArray(tourRaw) ? tourRaw : [tourRaw])\n  .filter((i) => i.title && tourKw.test(i.title))\n  .map((i) => ({ title: unesc(i.title), start: String(i.eventstartdate), end: String(i.eventenddate), region: String(i.addr1 || '').split(' ').slice(0, 2).join(' '), place: '' }));\n\n// 2) Culture portal (XML)\nconst xml = String($input.first().json.data ?? $input.first().json ?? '');\nconst tag = (s, t) => { const m = s.match(new RegExp(`<${t}>([\\\\s\\\\S]*?)</${t}>`)); return m ? m[1] : ''; };\nconst cultKw = /어린이|초등|가족|키즈|아동|꼬마|동화|체험|영유아|놀이터/;\nconst noise = /독주회|잔혹|협연|대학로|마법사관/;\nconst cult = [...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/g)].map((m) => m[1]).map((s) => ({\n  title: unesc(tag(s, 'title')), start: tag(s, 'startDate'), end: tag(s, 'endDate'),\n  region: `${tag(s, 'area')} ${tag(s, 'sigungu')}`.trim(), place: unesc(tag(s, 'place')), realm: tag(s, 'realmName'),\n})).filter((i) => i.title && !noise.test(i.title) && (cultKw.test(i.title) || i.realm === '아동/가족'));\n\n// 3) merge, dedupe, rank (public venues first, then soonest)\nconst pubKw = /국립|시립|도립|구립|군립|문화재단|문화원|문화예술회관|문화회관|예술의전당|박물관|미술관|도서관|과학관|평생학습관|시민회관|문화의전당/;\nconst seen = new Set();\nconst picked = [...tour, ...cult]\n  .filter((i) => i.end >= todayStr)\n  .filter((i) => { const k = i.title.replace(/\\s/g, ''); if (seen.has(k)) return false; seen.add(k); return true; })\n  .map((i) => ({ ...i, pub: pubKw.test(i.place + i.title) ? 0 : 1 }))\n  .sort((a, b) => a.pub - b.pub || a.start.localeCompare(b.start))\n  .slice(0, 10);\n\nif (!picked.length) {\n  return [{ json: { text: `[초등 행사 ${month}월] 이번 달 조건에 맞는 공공 행사가 없습니다.` } }];\n}\nconst lines = picked.map((i, n) => {\n  const t = i.title.length > 22 ? i.title.slice(0, 21) + '…' : i.title;\n  const dates = i.start === i.end ? fmt(i.start) : `${fmt(i.start)}~${fmt(i.end)}`;\n  return `${n + 1}. ${t} ${dates} (${i.region})`;\n});\nconst chunks = [];\nlet cur = [];\nfor (const l of lines) {\n  if ((cur.join('\\n') + '\\n' + l).length > 155) { chunks.push(cur); cur = []; }\n  cur.push(l);\n}\nif (cur.length) chunks.push(cur);\nreturn chunks.map((c, i) => ({\n  json: { text: `[초등 행사 ${month}월 보고 ${picked.length}건] (${i + 1}/${chunks.length})\\n${c.join('\\n')}`.slice(0, 200) },\n}));\n"
+      }
+    },
+    {
+      "id": "k5",
+      "name": "Send Kakao Memo",
+      "notes": "Why HTTP: no native Kakao node.",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://kapi.kakao.com/v2/api/talk/memo/default/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "template_object",
+              "value": "={{ JSON.stringify({ object_type: 'text', text: $json.text, link: { web_url: 'https://korean.visitkorea.or.kr', mobile_web_url: 'https://korean.visitkorea.or.kr' } }) }}"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "credentials": {
+        "oAuth2Api": {
+          "id": "RDOH5jEruPg3ysyP",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "id": "k6",
+      "name": "Fetch Culture Portal",
+      "notes": "Why HTTP: Korea Culture Information Service Agency (culture portal) open API, free key; no native node. Returns XML, parsed in the Code node.",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        540,
+        100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://apis.data.go.kr/B553457/cultureinfo/period2",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "PageNo",
+              "value": "1"
+            },
+            {
+              "name": "numOfrows",
+              "value": "1000"
+            },
+            {
+              "name": "serviceTp",
+              "value": "A"
+            },
+            {
+              "name": "sortStdr",
+              "value": "1"
+            },
+            {
+              "name": "from",
+              "value": "={{ $now.startOf('month').toFormat('yyyyLLdd') }}"
+            },
+            {
+              "name": "to",
+              "value": "={{ $now.endOf('month').toFormat('yyyyLLdd') }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "EMoBM66Rfx8Fin9W",
+          "name": "TourAPI serviceKey"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monthly 1st 8AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Festivals (TourAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Festivals (TourAPI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Kids Events and Format": {
+      "main": [
+        [
+          {
+            "node": "Send Kakao Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Festivals (TourAPI)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Culture Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Culture Portal": {
+      "main": [
+        [
+          {
+            "node": "Filter Kids Events and Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "executionOrder": "v1",
+    "errorWorkflow": "y3AnOKWG26QNkIjS"
+  },
+  "tags": [],
+  "pinData": null
+}
