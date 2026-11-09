@@ -1,0 +1,221 @@
+{
+  "id": "npVMd0WOhU42eEJV",
+  "name": "멜론 차트 크롤링 → 구글 시트",
+  "active": false,
+  "nodes": [
+    {
+      "id": "m1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "m2",
+      "name": "Firecrawl 멜론차트 크롤링",
+      "notes": "Why HTTP: Firecrawl 공식 코어 노드 없음(커뮤니티 노드는 설치 필요) → REST API v2 /scrape 사용. 자격증명: Header Auth (Authorization: Bearer fc-...)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v2/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: 'https://www.melon.com/chart/index.htm', formats: [ { type: 'json', prompt: '멜론 TOP100 차트 목록에서 각 곡의 순위(rank), 곡제목(title), 가수(artist), 좋아요 수(likes, 숫자만)를 모두 추출하세요. 좋아요 수는 쉼표를 제거한 숫자로, 없으면 0.', schema: { type: 'object', properties: { songs: { type: 'array', items: { type: 'object', properties: { rank: { type: 'number' }, title: { type: 'string' }, artist: { type: 'string' }, likes: { type: 'number' } }, required: ['rank','title','artist'] } } }, required: ['songs'] } } ], waitFor: 5000, timeout: 120000, location: { country: 'KR', languages: ['ko-KR'] } }) }}",
+        "options": {
+          "timeout": 150000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Eb8mc7j4QOKSFtkf",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "id": "m3",
+      "name": "곡 목록 분리",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "fieldToSplitOut": "data.json.songs",
+        "options": {}
+      }
+    },
+    {
+      "id": "m4",
+      "name": "구글 시트에 저장",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "12jZpjztuNTko6sYsJgJl1YXDVdugq9_TfexPWfUv33A",
+          "mode": "list",
+          "cachedResultName": "멜론차트",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/12jZpjztuNTko6sYsJgJl1YXDVdugq9_TfexPWfUv33A/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "시트1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/12jZpjztuNTko6sYsJgJl1YXDVdugq9_TfexPWfUv33A/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "순위": "={{ $json.rank }}",
+            "곡제목": "={{ $json.title }}",
+            "가수": "={{ $json.artist }}",
+            "좋아요 수": "={{ $json.likes }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "순위",
+              "displayName": "순위",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "곡제목",
+              "displayName": "곡제목",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "가수",
+              "displayName": "가수",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "좋아요 수",
+              "displayName": "좋아요 수",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "ygxTeZctdg3uT0QK",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "m0",
+      "name": "Test Webhook",
+      "webhookId": "58cf81cc-aed1-4694-b75e-9420a813eb88",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "melon-chart-test",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl 멜론차트 크롤링",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl 멜론차트 크롤링": {
+      "main": [
+        [
+          {
+            "node": "곡 목록 분리",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "곡 목록 분리": {
+      "main": [
+        [
+          {
+            "node": "구글 시트에 저장",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl 멜론차트 크롤링",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": [],
+  "pinData": {}
+}
