@@ -1,0 +1,86 @@
+{
+  "id": "2zBFGiYJA9CCxOmr",
+  "name": "Kakao Talk - 나에게 알림 (Webhook)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Webhook",
+      "webhookId": "de0ef62d-84c9-41fe-a967-043f3058025b",
+      "notes": "POST {\"message\":\"보낼 내용\",\"url\":\"(선택) 링크\"}",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kakao-notify",
+        "responseMode": "lastNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D1OfBqvHy2GK3rdG",
+          "name": "Kakao Webhook Header Auth"
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Send Kakao Memo",
+      "notes": "Why HTTP: no native Kakao node in n8n - uses Kakao REST API 'memo/default/send' (나에게 보내기).",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://kapi.kakao.com/v2/api/talk/memo/default/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "template_object",
+              "value": "={{ JSON.stringify({ object_type: 'text', text: String($json.body.message || '알림').slice(0, 200), link: { web_url: $json.body.url || 'https://n8n.io', mobile_web_url: $json.body.url || 'https://n8n.io' } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "oAuth2Api": {
+          "id": "RDOH5jEruPg3ysyP",
+          "name": "Unnamed credential"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Kakao Memo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "errorWorkflow": "y3AnOKWG26QNkIjS"
+  },
+  "tags": [],
+  "pinData": {}
+}
