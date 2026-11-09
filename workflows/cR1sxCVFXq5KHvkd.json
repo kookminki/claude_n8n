@@ -1,0 +1,87 @@
+{
+  "id": "cR1sxCVFXq5KHvkd",
+  "name": "카카오톡 할 일 등록 (Webhook)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "w1",
+      "name": "Webhook",
+      "webhookId": "927b2910-0690-4252-9474-49b4b893f6e5",
+      "notes": "POST {\"content\":\"할 일\",\"due_date\":\"20261111\",\"alarm_time\":\"0900\"}",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "kakao-todo",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "D1OfBqvHy2GK3rdG",
+          "name": "Kakao Webhook Header Auth"
+        }
+      }
+    },
+    {
+      "id": "w2",
+      "name": "Create Kakao Task",
+      "notes": "Why HTTP: no native Kakao node; Kakao TalkCalendar task API (scope talk_calendar_task).",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://kapi.kakao.com/v1/api/calendar/create/task",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "task",
+              "value": "={{ JSON.stringify({ content: String($json.body.content).slice(0, 100), due_info: { due_date: String($json.body.due_date), time_zone: 'Asia/Seoul', alarm_time: $json.body.alarm_time || '0900' } }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "oAuth2Api": {
+          "id": "RDOH5jEruPg3ysyP",
+          "name": "Unnamed credential"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create Kakao Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "executionOrder": "v1",
+    "errorWorkflow": "y3AnOKWG26QNkIjS"
+  },
+  "tags": [],
+  "pinData": null
+}
