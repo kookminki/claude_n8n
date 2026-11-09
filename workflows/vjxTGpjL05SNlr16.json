@@ -1,0 +1,163 @@
+{
+  "id": "vjxTGpjL05SNlr16",
+  "name": "PKC(001340) 장마감 분석 → Slack #alert",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "평일 장마감 후 16:40",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "40 16 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Fetch Fundamentals",
+      "notes": "Why HTTP: no native node for Naver Finance public JSON API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://m.stock.naver.com/api/stock/001340/integration",
+        "options": {}
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Fetch Daily Chart",
+      "notes": "Why HTTP: no native node for Naver Finance public JSON API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.stock.naver.com/chart/domestic/item/001340/day?startDateTime={{ $now.setZone('Asia/Seoul').minus({days: 220}).toFormat('yyyyMMdd') }}&endDateTime={{ $now.setZone('Asia/Seoul').toFormat('yyyyMMdd') }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Analyze PKC",
+      "notesInFlow": true,
+      "notes": "Why Code: no native node computes SMA/RSI/cross signals over a price series — one short all-items node",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r.closePrice).sort((a, b) => a.localDate.localeCompare(b.localDate));\nconst today = DateTime.now().setZone('Asia/Seoul').toFormat('yyyyMMdd');\nconst last = rows[rows.length - 1];\n// 휴장일(오늘 봉 없음)이면 알림 생략\nif (!last || last.localDate !== today) return [];\n\nconst info = {};\nfor (const t of $('Fetch Fundamentals').first().json.totalInfos || []) info[t.code] = t.value;\nconst num = s => Number(String(s ?? '').replace(/[^0-9.\\-]/g, ''));\n\nconst closes = rows.map(r => r.closePrice);\nconst vols = rows.map(r => r.accumulatedTradingVolume);\nconst sma = (arr, n) => arr.length >= n ? arr.slice(-n).reduce((a, b) => a + b, 0) / n : null;\n\nconst close = last.closePrice;\nconst prev = num(info.lastClosePrice) || rows[rows.length - 2]?.closePrice || close;\nconst chg = close - prev;\nconst chgPct = prev ? (chg / prev) * 100 : 0;\n\nconst ma5 = sma(closes, 5), ma20 = sma(closes, 20), ma60 = sma(closes, 60);\nconst pc = closes.slice(0, -1);\nconst pma5 = sma(pc, 5), pma20 = sma(pc, 20);\n\n// RSI(14, Wilder)\nlet rsi = null;\nif (closes.length > 14) {\n  let g = 0, l = 0;\n  for (let i = 1; i <= 14; i++) { const d = closes[i] - closes[i - 1]; d >= 0 ? g += d : l -= d; }\n  g /= 14; l /= 14;\n  for (let i = 15; i < closes.length; i++) {\n    const d = closes[i] - closes[i - 1];\n    g = (g * 13 + Math.max(d, 0)) / 14;\n    l = (l * 13 + Math.max(-d, 0)) / 14;\n  }\n  rsi = l === 0 ? 100 : 100 - 100 / (1 + g / l);\n}\n\nconst avgVol20 = sma(vols.slice(0, -1), 20);\nconst volRatio = avgVol20 ? last.accumulatedTradingVolume / avgVol20 : null;\nconst hi52 = num(info.highPriceOf52Weeks), lo52 = num(info.lowPriceOf52Weeks);\n\nconst signals = [];\nif (ma5 && ma20 && pma5 && pma20) {\n  if (pma5 <= pma20 && ma5 > ma20) signals.push('🟢 골든크로스 (MA5가 MA20 상향 돌파)');\n  if (pma5 >= pma20 && ma5 < ma20) signals.push('🔴 데드크로스 (MA5가 MA20 하향 이탈)');\n}\nif (rsi !== null) {\n  if (rsi >= 70) signals.push('🔥 RSI 과매수 구간 (' + rsi.toFixed(1) + ')');\n  else if (rsi <= 30) signals.push('🧊 RSI 과매도 구간 (' + rsi.toFixed(1) + ')');\n}\nif (volRatio && volRatio >= 2) signals.push('📢 거래량 급증 (20일 평균 대비 ' + volRatio.toFixed(1) + '배)');\nif (Math.abs(chgPct) >= 5) signals.push((chgPct > 0 ? '🚀 급등 ' : '⚠️ 급락 ') + chgPct.toFixed(2) + '%');\nif (lo52 && close <= lo52 * 1.05) signals.push('📉 52주 최저가 근접 (' + lo52.toLocaleString('ko-KR') + '원)');\nif (hi52 && close >= hi52 * 0.95) signals.push('📈 52주 최고가 근접 (' + hi52.toLocaleString('ko-KR') + '원)');\n\nlet trend = '판단 보류(데이터 부족)';\nif (ma20 && ma60) trend = close > ma20 && ma20 > ma60 ? '상승 추세 (정배열)' : close < ma20 && ma20 < ma60 ? '하락 추세 (역배열)' : '혼조 / 횡보';\n\nconst f = (n, d = 0) => n === null || n === undefined ? '-' : Number(n).toLocaleString('ko-KR', { maximumFractionDigits: d });\nconst arrow = chg > 0 ? '▲' : chg < 0 ? '▼' : '-';\nconst head = chg > 0 ? '📈' : chg < 0 ? '📉' : '➖';\n\nconst message = [\n  head + ' *PKC (001340) 장마감 분석* · ' + DateTime.now().setZone('Asia/Seoul').toFormat('yyyy-MM-dd'),\n  '*종가* ' + f(close) + '원  ' + arrow + ' ' + f(Math.abs(chg)) + '원 (' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%)',\n  '시/고/저  ' + f(last.openPrice) + ' / ' + f(last.highPrice) + ' / ' + f(last.lowPrice) + '  |  거래량 ' + f(last.accumulatedTradingVolume) + (volRatio ? ' (20일 평균 ' + volRatio.toFixed(1) + '배)' : ''),\n  '',\n  '*추세*  ' + trend,\n  'MA5 ' + f(ma5) + '  ·  MA20 ' + f(ma20) + '  ·  MA60 ' + f(ma60) + '  ·  RSI(14) ' + (rsi === null ? '-' : rsi.toFixed(1)),\n  '*밸류에이션*  PER ' + (info.per || '-') + '  ·  PBR ' + (info.pbr || '-') + '  ·  시총 ' + (info.marketValue || '-') + '  ·  배당수익률 ' + (info.dividendYieldRatio || '-'),\n  '52주 범위  ' + (info.lowPriceOf52Weeks || '-') + ' ~ ' + (info.highPriceOf52Weeks || '-'),\n  '',\n  '*시그널*',\n  signals.length ? signals.map(s => '• ' + s).join('\\n') : '• 특이 시그널 없음',\n  '',\n  '_자동 생성된 기술적 지표 요약이며 투자 권유가 아닙니다._'\n].join('\\n');\n\nreturn [{ json: { message, close, chgPct, rsi, ma5, ma20, ma60, signals } }];"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Slack #alert",
+      "webhookId": "89abfbaf-2a02-4e0c-8001-74be2a22fc11",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "alert",
+          "mode": "name"
+        },
+        "text": "={{ $json.message }}",
+        "otherOptions": {}
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "P9cQo4bbheX55bBd",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "평일 장마감 후 16:40": {
+      "main": [
+        [
+          {
+            "node": "Fetch Fundamentals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Fundamentals": {
+      "main": [
+        [
+          {
+            "node": "Fetch Daily Chart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Daily Chart": {
+      "main": [
+        [
+          {
+            "node": "Analyze PKC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze PKC": {
+      "main": [
+        [
+          {
+            "node": "Slack #alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": null
+}
