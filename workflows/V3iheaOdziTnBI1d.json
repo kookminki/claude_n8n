@@ -1,0 +1,195 @@
+{
+  "id": "V3iheaOdziTnBI1d",
+  "name": "매일 8시 날씨 알림 (역삼·수원) → Slack #alert",
+  "active": false,
+  "nodes": [
+    {
+      "id": "w1",
+      "name": "매일 오전 8시",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "w2",
+      "name": "Open-Meteo 날씨 조회",
+      "notes": "Why HTTP: Open-Meteo 전용 코어 노드 없음 → 공개 REST API 사용 (API 키 불필요). 좌표 순서: 1) 서울 역삼 2) 경기 수원",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "37.5006,37.2636"
+            },
+            {
+              "name": "longitude",
+              "value": "127.0364,127.0286"
+            },
+            {
+              "name": "current",
+              "value": "temperature_2m,relative_humidity_2m,weather_code"
+            },
+            {
+              "name": "daily",
+              "value": "precipitation_probability_max"
+            },
+            {
+              "name": "timezone",
+              "value": "Asia/Seoul"
+            },
+            {
+              "name": "forecast_days",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w3",
+      "name": "위치별 결과 합치기",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "data",
+        "include": "allFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "w4",
+      "name": "메시지 작성",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "message",
+              "type": "string",
+              "value": "={{ $json.data.map((d, i) => '[' + ['서울시 역삼동', '경기도 수원시'][i] + ' 날씨]\\n- 날씨: ' + ({0:'맑음',1:'대체로 맑음',2:'구름 조금',3:'흐림',45:'안개',48:'안개',51:'약한 이슬비',53:'이슬비',55:'강한 이슬비',61:'약한 비',63:'비',65:'강한 비',71:'약한 눈',73:'눈',75:'강한 눈',80:'약한 소나기',81:'소나기',82:'강한 소나기',95:'뇌우',96:'우박 동반 뇌우',99:'우박 동반 뇌우'}[d.current.weather_code] ?? ('날씨코드 ' + d.current.weather_code)) + '\\n- 온도: ' + d.current.temperature_2m + '°C\\n- 습도: ' + d.current.relative_humidity_2m + '%\\n- 강수확률: ' + d.daily.precipitation_probability_max[0] + '%').join('\\n\\n') }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w5",
+      "name": "Slack #alert 전송",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "alert"
+        },
+        "text": "={{ $json.message }}",
+        "otherOptions": {}
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "P9cQo4bbheX55bBd",
+          "name": "Slack account"
+        }
+      },
+      "webhookId": "e60bdb33-f59b-4f2f-ba25-5b17b2149b9c"
+    }
+  ],
+  "connections": {
+    "매일 오전 8시": {
+      "main": [
+        [
+          {
+            "node": "Open-Meteo 날씨 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open-Meteo 날씨 조회": {
+      "main": [
+        [
+          {
+            "node": "위치별 결과 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "위치별 결과 합치기": {
+      "main": [
+        [
+          {
+            "node": "메시지 작성",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "메시지 작성": {
+      "main": [
+        [
+          {
+            "node": "Slack #alert 전송",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": null
+}
